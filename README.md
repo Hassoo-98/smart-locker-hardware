@@ -1,127 +1,119 @@
-Smart Locker Hardware System (Raspberry Pi 4)
-Overview
-This repository contains the hardware software for the Smart Locker system running on Raspberry Pi 4. It is designed to:
+# Smart Locker Hardware System 🛡️📷
 
-Control lockers via GPIO pins
-Capture camera feeds using Pi Camera
-Communicate with a Django backend for status updates and commands
-Automatically update itself from GitHub
-Run in Docker containers for easy deployment and reproducibility
+Raspberry Pi 4 based smart locker controller with camera integration, Docker deployment, automatic GitHub updates, and production-ready scaling design.
 
-This system is ready for bulk production by cloning the SD card image to multiple devices.
+[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi%204-Model%20B-red?logo=raspberrypi)](https://www.raspberrypi.com/products/raspberry-pi-4-model-b/)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](#github-actions-pipeline)
 
-Architecture
-Components
+## ✨ Features
 
-Hardware Services
-camera_service.py → captures video, images, and sends data to backend
-locker_controller.py → controls locker opening/closing via GPIO
+- GPIO-based locker solenoid / relay control  
+- Raspberry Pi Camera capture (photos + video streams)  
+- Secure communication with Django backend via REST API  
+- Fully containerized with **Docker & docker-compose**  
+- Automatic code & image updates on boot  
+- Multi-architecture Docker images (ARM64 / AMD64)  
+- Designed for **100+ device** fleet management  
+- Easy bulk provisioning via master SD card image + unique `.env`
 
-Docker
-Each service runs inside its own Docker container
-Uses volumes to store logs and data persistently
+## 📦 Architecture Overview
+┌───────────────────────┐       ┌───────────────────────┐
+│   Raspberry Pi 4      │       │   Django Backend      │
+│                       │       │                       │
+│  ┌───────────────┐    │       │  ┌─────────────────┐  │
+│  │ camera_service│◄───┼───────┼─►│   API Endpoints │  │
+│  └───────────────┘    │  HTTP │  └─────────────────┘  │
+│  ┌───────────────┐    │       │                       │
+│  │locker_controller◄───┼───────┼─►│   Device Status │  │
+│  └───────────────┘    │       │  └─────────────────┘  │
+│        │              │       └───────────────────────┘
+│   GPIO pins           │
+│   Pi Camera           │
+└───────────────────────┘
+▲
+│ pull / update
+│
+GitHub + Docker Hub
+text## 🚀 Quick Start
 
-Update System
-update.sh → pulls the latest code from GitHub, installs dependencies, rebuilds containers
-start.sh → runs services on boot
+### 1. Prerequisites
 
-CI/CD
-GitHub Actions pipeline builds multi-architecture Docker images (ARM for Pi)
-Pushes images to Docker Hub
+```bash
+# Update and install essentials
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git docker.io docker-compose
 
-Networking
-Services communicate with Django backend via HTTP API
-Each device has a unique DEVICE_ID configured via .env
-
-
-
-Setup Instructions
-Prerequisites
-
-Raspberry Pi 4 (ARMv7/ARM64)
-Raspberry Pi OS (64-bit recommended)
-Docker & Docker Compose installed
-
-Bashsudo apt update && sudo apt install -y docker.io docker-compose
-sudo usermod -aG docker pi
-sudo apt install git -y
-Clone Repository
+# Add current user to docker group (recommended: user 'pi')
+sudo usermod -aG docker $USER
+# Log out and back in (or reboot)
+2. Clone & Configure
 Bashgit clone https://github.com/yourusername/smart-locker-hardware.git
 cd smart-locker-hardware
-Environment Variables
-Create .env in the project root:
-textAPI_TOKEN=YOUR_SECURE_DEVICE_TOKEN
+
+# Create and edit .env file
+cp .env.example .env
+nano .env
+.env example:
+ini# Required
 API_URL=https://yourserver.com/api
-DEVICE_ID=locker-001
-For bulk production, each device can have a unique DEVICE_ID.
-Install Dependencies (if not using Docker)
-Bashpip3 install -r requirements.txt
-Docker Setup
+API_TOKEN=dev_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DEVICE_ID=locker-042
 
-Build images for Pi:Bashdocker-compose build
-Start services:Bashdocker-compose up -d
-Check logs:Bashdocker logs -f camera_service
-docker logs -f locker_controller
+# Optional / advanced
+LOG_LEVEL=INFO
+CAMERA_RESOLUTION=1920x1080
+HEARTBEAT_INTERVAL=30
+3. Docker Deployment (recommended)
+Bash# Build containers (first time ~5-10 min)
+docker compose build
 
-Auto-Update on Boot
+# Start in background
+docker compose up -d
 
-start.sh runs at boot (via systemd) and executes update.sh:Bashsudo cp start.sh /usr/local/bin/start.sh
-sudo chmod +x /usr/local/bin/start.sh
-Systemd service:Bashsudo cp locker.service /etc/systemd/system/
+# Follow logs (most useful during setup)
+docker compose logs -f camera
+docker compose logs -f locker
+🔄 Auto-update on Boot
+The system uses a systemd service that runs start.sh → update.sh on every boot.
+Bash# Install systemd service (one-time)
+sudo cp locker.service /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo systemctl enable locker.service
 sudo systemctl start locker.service
-On boot, the Pi will:
-Pull the latest code from GitHub
-Install any new dependencies
-Restart Docker containers with the new code
 
+# Check status
+sudo systemctl status locker.service
+What happens on boot:
 
-GitHub Actions Pipeline
+update.sh → git pull latest code
+Rebuilds containers if needed (docker compose build --pull)
+Restarts services (docker compose up -d)
 
-CI/CD pipeline builds Docker images for ARM & AMD architectures
-Pushes image to Docker Hub
-Allows automatic updates on each Pi when update.sh is run
-
-Scaling to 100+ Devices
-
-Docker & .env isolation
-Each Pi runs the same Docker image
-.env file ensures unique DEVICE_ID and secure API token
-
-GitHub updates
-Single repo → all devices can pull updates simultaneously
-Docker containers handle restarts automatically
-
-Backend considerations
-Django backend should handle concurrent API requests
-Use database indexing and caching for performance
-Optional: load balancer if you have multiple backend servers
-
-Resource management on Pi
-Each Pi runs lightweight Docker containers (camera + locker)
-CPU & memory limits can be applied via Docker Compose to prevent overload
-
-Logging & monitoring
-Centralized logging system (e.g., ELK Stack or Graylog) can be used for 100+ devices
-Optionally, Watchtower can auto-pull Docker images for fully automated updates
-
-
-File Structure
+🏭 Scaling to 100+ Devices
+AspectSolution / RecommendationUnique identificationUnique DEVICE_ID in each .envCode distributionSingle GitHub repo + auto-pull on bootContainer updatesDocker Hub + GitHub Actions multi-arch buildsFully automaticAdd Watchtower containerCentralized loggingELK / Loki / Graylog / Fluent Bit → central serverMonitoringPrometheus + Node Exporter + Grafana (lightweight on Pi)Mass provisioningBurn master SD card image → customize only .env per device
+📂 Project Structure
 textsmart-locker-hardware/
-├── hardware/
+├── hardware/                    # Main application logic
 │   ├── camera_service.py
 │   └── locker_controller.py
-├── scripts/
-│   ├── update.sh
-│   └── start.sh
+├── scripts/                     # Boot & update logic
+│   ├── start.sh
+│   └── update.sh
+├── .env.example
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
-├── locker.service        # systemd service
-└── .env                  # environment variables
-Tips for Bulk Production
+├── locker.service               # systemd unit file
+└── README.md
+🔧 Development Tips
 
-Create a master SD card image with Docker and all dependencies installed
-Clone the SD card for all Pis
-Each Pi only needs a unique .env file for API credentials and device ID
-Use update.sh to push code updates to all devices automatically
+Use docker compose up (without -d) during development
+Mount local code for fast iteration:
+
+YAML# in docker-compose.yml (dev override)
+volumes:
+  - ./hardware:/app/hardware:ro
+📜 License
+MIT License
+Feel free to use, modify, and deploy — just keep the spirit of open-source alive! 🚀
