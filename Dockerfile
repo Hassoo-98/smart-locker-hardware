@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.3
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -7,12 +6,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Install system dependencies (fixed for Debian 12 bookworm)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
     python3-pip \
     swig \
-    libatlas3-base \
+    libblas-dev \
+    liblapack-dev \
     libjpeg-dev \
     libtiff-dev \
     libopenjp2-7-dev \
@@ -25,14 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     git \
     curl \
-    openssh-client \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone lgpio using SSH forward
-# --mount=type=ssh allows Docker to access your SSH key temporarily
-# You will build using: docker build --ssh default .
-RUN --mount=type=ssh git clone git@github.com:agherzan/lgpio.git /tmp/lgpio \
+# Install lgpio from HTTPS source
+RUN git clone https://github.com/agherzan/lgpio.git /tmp/lgpio \
     && cd /tmp/lgpio \
     && make \
     && make install \
@@ -42,11 +40,14 @@ RUN --mount=type=ssh git clone git@github.com:agherzan/lgpio.git /tmp/lgpio \
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
+# Copy requirements and install Python packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy hardware code
 COPY ./hardware ./hardware
 
+# Create non-root user
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
