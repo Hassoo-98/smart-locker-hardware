@@ -40,7 +40,7 @@ from pathlib import Path
 # MediaMTX Server Configuration
 # RTSP streaming can use domain name or IP address
 MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")  # Server IP
-MEDIAMTX_PORT = 8554
+MEDIAMTX_PORT = 8554  # RTSP port for MediaMTX
 
 # Camera Configuration
 # Use V4L2 device paths or libcamera
