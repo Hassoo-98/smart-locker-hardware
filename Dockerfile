@@ -12,14 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-pip \
     swig \
-    libatlas-base-dev \
+    libatlas3-base \
     libjpeg-dev \
     libtiff-dev \
     libopenjp2-7-dev \
     libavcodec-dev \
     libavformat-dev \
     libswscale-dev \
-    libgpiod2 \
     libgpiod-dev \
     libcap-dev \
     pkg-config \
@@ -29,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install lgpio from source
+# Install lgpio from source (works for ARM)
 RUN git clone https://github.com/agherzan/lgpio.git /tmp/lgpio \
     && cd /tmp/lgpio \
     && make \
