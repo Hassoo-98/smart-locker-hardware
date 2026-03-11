@@ -1,15 +1,19 @@
-# Multi-platform base image (works on Raspberry Pi ARM64 and x86_64)
-FROM python:3.11-slim-bookworm
+# -------------------------------
+# Pi-Optimized Base Image
+# -------------------------------
+FROM python:3.11-slim-bullseye
 
-# Set working directory
+# -------------------------------
+# Set working directory & environment
+# -------------------------------
 WORKDIR /app
-
-# Environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# -------------------------------
 # Install system dependencies for Pi GPIO & cameras
+# -------------------------------
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -28,38 +32,38 @@ RUN apt-get update && \
     pkg-config \
     cmake \
     git \
-    curl && \
-    rm -rf /var/lib/apt/lists/*
+    curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# -------------------------------
 # Upgrade pip tools
+# -------------------------------
 RUN pip install --upgrade pip setuptools wheel
 
-# Copy requirements first (better Docker caching)
+# -------------------------------
+# Copy and install Python dependencies
+# -------------------------------
 COPY requirements.txt .
+# Use precompiled wheels when possible to avoid source compilation
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    --root-user-action=ignore \
-    -r requirements.txt || \
-    pip install --no-cache-dir \
-    --root-user-action=ignore \
-    --break-system-packages \
-    -r requirements.txt
-
+# -------------------------------
 # Copy hardware scripts
+# -------------------------------
 COPY ./hardware ./hardware
 
+# -------------------------------
 # Create non-root user for security
-RUN useradd -m appuser
-
-# Change ownership
-RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
+# -------------------------------
+RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
+# -------------------------------
 # Set working directory
+# -------------------------------
 WORKDIR /app/hardware
 
+# -------------------------------
 # Default command
+# -------------------------------
 CMD ["python3", "camera_stream_service.py"]
