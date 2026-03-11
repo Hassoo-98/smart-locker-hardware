@@ -9,10 +9,11 @@ services:
 
     devices:
       - /dev/video0:/dev/video0
+      - /dev/video3:/dev/video3
       - /dev/gpiochip0:/dev/gpiochip0
       - /dev/gpiochip4:/dev/gpiochip4
-      - /dev/i2c-1:/dev/i2c-1
-      - /dev/spidev0.0:/dev/spidev0.0
+      - /dev/i2c-20:/dev/i2c-1
+      # - /dev/spidev0.0:/dev/spidev0.0  # Not available, enable via raspi-config if needed
 
     volumes:
       - ./hardware:/app/hardware:ro
@@ -26,7 +27,7 @@ services:
       - OMP_NUM_THREADS=1
 
     working_dir: /app/hardware
-    command: python3 -u camera_stream_service.py
+    command: python3 -u camera_stream_service.py start
 
     logging:
       driver: json-file

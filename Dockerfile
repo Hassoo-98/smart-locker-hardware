@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     libc-dev \
+    libcap-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

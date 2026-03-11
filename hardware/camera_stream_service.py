@@ -51,7 +51,7 @@ CAMERAS = {
         "fps": 25,
     },
     "pi_cam_internal": {
-        "device": "/dev/video2", 
+        "device": "/dev/video3", 
         "resolution": "640x480",
         "fps": 25,
     }
