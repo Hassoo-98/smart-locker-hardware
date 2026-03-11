@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   camera-service:
     build:
@@ -8,13 +6,13 @@ services:
     container_name: camera_service
     restart: unless-stopped
     volumes:
-      - ./hardware:/app/hardware     
-      - ./data:/app/data              
+      - ./hardware:/app/hardware
+      - ./data:/app/data
     environment:
       - DEVICE_ID=locker-001
-      - API_URL=https://backend.qbox.sa/       
+      - API_URL=https://backend.qbox.sa/
     working_dir: /app/hardware
-    command: python3 hardware/camera_stream_service.py 
+    command: python3 hardware/camera_stream_service.py
     logging:
       driver: "json-file"
       options:
