@@ -6,15 +6,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install essential system dependencies for camera and GPIO
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # GPIO support
+# Add Raspberry Pi repository for libcamera-apps
+RUN echo "deb http://archive.raspberrypi.com/debian bookworm main" > /etc/apt/sources.list.d/raspi.list && \
+    curl -sSL https://archive.raspberrypi.com/debian/archivrepo.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/raspi.gpg && \
+    apt-get update
+
+# Install essential system dependencies
+RUN apt-get install -y --no-install-recommends \
     libgpiod2 \
-    # Camera/Video streaming (required for camera_stream_service.py)
     ffmpeg \
     v4l-utils \
     libcamera-apps \
-    # Basic utilities
     libjpeg62-turbo \
     libargon2-1 \
     && apt-get clean \
