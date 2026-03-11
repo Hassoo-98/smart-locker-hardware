@@ -10,7 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     libgpiod-dev \
+    python3-gpiod \
     gpiod \
+    libopencv-dev \
+    python3-opencv \
     libjpeg-dev \
     libtiff-dev \
     libopenjp2-7-dev \
@@ -18,7 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libavformat-dev \
     libswscale-dev \
     libavdevice-dev \
-    libopencv-dev \
+    libcap-dev \
+    libarchive-dev \
     v4l-utils \
     curl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
