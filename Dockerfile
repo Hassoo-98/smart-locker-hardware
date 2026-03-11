@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # upgrade pip
 RUN pip install --upgrade pip setuptools wheel
-
+RUN apt-get update && apt-get install -y lgpio-dev
 # copy requirements
 COPY requirements.txt .
 
