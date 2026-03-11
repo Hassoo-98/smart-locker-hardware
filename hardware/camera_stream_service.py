@@ -347,9 +347,21 @@ def main():
                 if process.poll() is not None:
                     # Get FFmpeg output before restarting
                     try:
-                        output = process.stdout.read().decode('utf-8', errors='ignore')
+                        # Read all available output
+                        output = b""
+                        while True:
+                            try:
+                                chunk = process.stdout.read1(1024)
+                                if not chunk:
+                                    break
+                                output += chunk
+                                if len(output) > 10000:  # Limit output
+                                    break
+                            except:
+                                break
                         if output:
-                            print(f"[{camera_id}] FFmpeg output: {output[:500]}")
+                            output_str = output.decode('utf-8', errors='ignore')
+                            print(f"[{camera_id}] FFmpeg output: {output_str[-2000:]}")
                     except:
                         pass
                     print(f"[{camera_id}] FFmpeg process died, restarting...")
