@@ -15,6 +15,10 @@ services:
       - /dev/i2c-20:/dev/i2c-1
       # - /dev/spidev0.0:/dev/spidev0.0  # Not available, enable via raspi-config if needed
 
+    # Grant video group access to container
+    group_add:
+      - video
+
     volumes:
       - ./hardware:/app/hardware:ro
       - ./data:/app/data
