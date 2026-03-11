@@ -9,22 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     build-essential \
     pkg-config \
-    # GPIO
     libgpiod-dev \
-    python3-gpiod \
     gpiod \
-    # Camera / OpenCV deps
-    libopencv-dev \
-    python3-opencv \
     libjpeg-dev \
     libtiff-dev \
     libopenjp2-7-dev \
-    # AV / media
     libavcodec-dev \
     libavformat-dev \
     libswscale-dev \
     libavdevice-dev \
-    # Utils
+    libopencv-dev \
     v4l-utils \
     curl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
