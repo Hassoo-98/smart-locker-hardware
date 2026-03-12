@@ -17,16 +17,38 @@ import os
 import subprocess
 import time
 import signal
+import glob
 
 MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")
 MEDIAMTX_PORT = int(os.environ.get("MEDIAMTX_PORT", "8554"))
 STREAM_KEY = os.environ.get("STREAM_KEY", "secret")
 
-# Camera configuration (internal uses MJPG for stability)
-CAMERAS = {
-    "pi_cam_external": {"device": "/dev/video0", "resolution": "640x480", "fps": 25, "format": "yuyv422"},
-    "pi_cam_internal": {"device": "/dev/video2", "resolution": "640x480", "fps": 25, "format": "mjpeg"},
+# Define cameras by USB hardware ID (so it's stable even if /dev/videoX changes)
+CAMERA_HARDWARE_IDS = {
+    "pi_cam_external": "usb-0000:01:00.0-1.2",  # LRCP H-720P
+    "pi_cam_internal": "usb-0000:01:00.0-1.4",  # Integrated Camera
 }
+
+# Auto-detect /dev/videoX for each camera
+def find_camera_device_by_id(usb_id):
+    for video_path in glob.glob("/dev/video*"):
+        sys_path = os.path.realpath(f"/sys/class/video4linux/{os.path.basename(video_path)}/device")
+        if usb_id in sys_path:
+            return video_path
+    return None
+
+CAMERAS = {}
+for cam_name, hw_id in CAMERA_HARDWARE_IDS.items():
+    dev = find_camera_device_by_id(hw_id)
+    if dev:
+        CAMERAS[cam_name] = {
+            "device": dev,
+            "resolution": "640x480",
+            "fps": 25,
+            "format": "mjpeg" if cam_name == "pi_cam_internal" else None
+        }
+    else:
+        print(f"[WARNING] Camera {cam_name} with USB ID {hw_id} not found!")
 
 FFMPEG_PROCESSES = {}
 
@@ -36,6 +58,20 @@ def get_rtsp_url(camera_id):
 def check_camera(device):
     return os.path.exists(device)
 
+def detect_camera_format(device):
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "--device", device, "--get-fmt-video"],
+            capture_output=True, text=True, check=True
+        ).stdout.lower()
+        if "mjpeg" in result:
+            return "mjpeg"
+        elif "yuyv" in result:
+            return "yuyv422"
+    except Exception:
+        pass
+    return None
+
 def start_stream(camera_id, cfg):
     if camera_id in FFMPEG_PROCESSES and FFMPEG_PROCESSES[camera_id].poll() is None:
         print(f"[{camera_id}] already streaming")
@@ -44,7 +80,7 @@ def start_stream(camera_id, cfg):
     device = cfg["device"]
     resolution = cfg["resolution"]
     fps = cfg["fps"]
-    fmt = cfg.get("format")
+    fmt = cfg.get("format") or detect_camera_format(device)
 
     if not check_camera(device):
         print(f"[{camera_id}] camera not found: {device}")
@@ -79,7 +115,8 @@ def start_stream(camera_id, cfg):
         rtsp_url,
     ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid, text=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            preexec_fn=os.setsid, text=True)
     FFMPEG_PROCESSES[camera_id] = proc
     print(f"[{camera_id}] streaming at {rtsp_url} (PID {proc.pid}, format={fmt})")
 
