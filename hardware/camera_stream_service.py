@@ -26,24 +26,19 @@ Environment Variables:
     MEDIAMTX_HOST - MediaMTX server hostname/IP (default: 192.168.1.100)
     MEDIAMTX_PORT - MediaMTX RTSP port (default: 8554)
 """
-
 import subprocess
 import os
 import sys
 import time
 import signal
-import threading
-import re
-from pathlib import Path
 
-# ============== CONFIG ==============
-# MediaMTX Server Configuration
-# RTSP streaming can use domain name or IP address
-MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")  # Server IP
-MEDIAMTX_PORT = 8554  # RTSP port for MediaMTX
+# ================= CONFIG =================
 
-# Camera Configuration
-# Use V4L2 device paths
+MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")
+MEDIAMTX_PORT = 8554
+
+STREAM_KEY = os.environ.get("STREAM_KEY", "secret")
+
 CAMERAS = {
     "pi_cam_external": {
         "device": "/dev/video0",
@@ -51,335 +46,289 @@ CAMERAS = {
         "fps": 25,
     },
     "pi_cam_internal": {
-        "device": "/dev/video2",  # Second USB camera
+        "device": "/dev/video2",
         "resolution": "640x480",
         "fps": 25,
     }
 }
 
-# FFmpeg/Streaming settings
-STREAM_KEY = os.environ.get("STREAM_KEY", "secret")  # Optional stream key
-HW_ACCEL = False      # Use software encoding (libx264) - hardware encoder not available in container
-AUDIO = False         # No audio for now
-
-# Process management
 FFMPEG_PROCESSES = {}
-# ==================================
+
+# ==========================================
 
 
 def get_rtsp_url(camera_id):
-    """Get RTSP URL for camera"""
+
     if STREAM_KEY:
         return f"rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}?key={STREAM_KEY}"
+
     return f"rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}"
 
 
-def check_camera_available(device):
-    """Check if camera device is available"""
+def check_camera(device):
+
     return os.path.exists(device)
 
 
-def get_v4l2_format(device):
-    """Get available format for V4L2 device"""
+def detect_camera_format(device):
+
     try:
         result = subprocess.run(
-            ["v4l2-ctl", "--device", device, "--list-formats"],
+            ["v4l2-ctl", "--device", device, "--get-fmt-video"],
             capture_output=True,
-            text=True,
-            timeout=5
+            text=True
         )
-        return result.stdout
-    except Exception as e:
-        print(f"Error checking camera format: {e}")
-        return None
+
+        if "MJPG" in result.stdout:
+            return "mjpeg"
+
+    except:
+        pass
+
+    return None
 
 
-def start_stream_ffmpeg(camera_id, config):
-    """Start FFmpeg streaming to MediaMTX"""
-    
+def start_stream(camera_id, config):
+
     if camera_id in FFMPEG_PROCESSES:
+
         proc = FFMPEG_PROCESSES[camera_id]
+
         if proc.poll() is None:
-            print(f"[{camera_id}] Already streaming")
-            return True
-    
+            print(f"[{camera_id}] already streaming")
+            return
+
     device = config["device"]
-    resolution = config.get("resolution", "640x480")
-    fps = config.get("fps", 25)
+    resolution = config["resolution"]
+    fps = config["fps"]
+
+    if not check_camera(device):
+
+        print(f"[{camera_id}] camera not found: {device}")
+        return
+
     rtsp_url = get_rtsp_url(camera_id)
-    
-    # Check camera
-    if not check_camera_available(device):
-        print(f"[{camera_id}] Camera device {device} not found!")
-        return False
-    
-    print(f"[{camera_id}] Starting stream to {rtsp_url}")
-    print(f"[{camera_id}] Device: {device}, Resolution: {resolution}, FPS: {fps}")
-    
-    # FFmpeg command for hardware-accelerated H264 streaming
+
+    print(f"[{camera_id}] starting stream")
+    print(f"[{camera_id}] device={device} {resolution}@{fps}")
+    print(f"[{camera_id}] url={rtsp_url}")
+
+    camera_format = detect_camera_format(device)
+
     cmd = [
         "ffmpeg",
+
+        "-loglevel", "error",
+
+        "-fflags", "nobuffer",
+
+        "-flags", "low_delay",
+
         "-f", "v4l2",
+
         "-thread_queue_size", "4096",
+    ]
+
+    if camera_format:
+        cmd += ["-input_format", camera_format]
+
+    cmd += [
+
         "-framerate", str(fps),
+
         "-video_size", resolution,
+
         "-i", device,
-    ]
-    
-    # Add hardware acceleration if available
-    if HW_ACCEL:
-        cmd.extend([
-            # Use software encoding (libx264) since h264_v4l2m2m may not be available in container
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-        ])
-    
-    # Add h264 encoding options for low latency
-    cmd.extend([
-        "-b:v", "1000k",
-        "-maxrate", "1500k",
-        "-bufsize", "2000k",
-        "-g", str(fps * 2),  # Keyframe interval
-        "-keyint_min", str(fps),
-        "-flush_packets", "1",
-        "-f", "rtsp",
-        "-rtsp_transport", "tcp",
-        rtsp_url
-    ])
-    
-    try:
-        # Start FFmpeg process
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            preexec_fn=os.setsid
-        )
-        FFMPEG_PROCESSES[camera_id] = process
-        print(f"[{camera_id}] FFmpeg started (PID: {process.pid})")
-        return True
-    except Exception as e:
-        print(f"[{camera_id}] Failed to start: {e}")
-        return False
 
-
-def start_stream_libcamera(camera_id, config):
-    """Start streaming using libcamera (for Pi HQ camera)"""
-    
-    if camera_id in FFMPEG_PROCESSES:
-        proc = FFMPEG_PROCESSES[camera_id]
-        if proc.poll() is None:
-            print(f"[{camera_id}] Already streaming")
-            return True
-    
-    device = config.get("device", "0")
-    resolution = config.get("resolution", "640x480")
-    fps = config.get("fps", 25)
-    rtsp_url = get_rtsp_url(camera_id)
-    
-    # Parse resolution
-    width, height = map(int, resolution.split('x'))
-    
-    print(f"[{camera_id}] Starting libcamera stream to {rtsp_url}")
-    
-    # Use libcamera-vid with FFmpeg for streaming
-    cmd = [
-        "libcamera-vid",
-        "--width", str(width),
-        "--height", str(height),
-        "--framerate", str(fps),
-        "-t", "0",  # Infinite streaming
-        "--inline",
-        "--segment", "0",  # No segmentation for RTSP
-        "-o", "-"
-    ]
-    
-    # Pipe to FFmpeg for RTSP
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-i", "-",
         "-c:v", "libx264",
+
         "-preset", "ultrafast",
+
         "-tune", "zerolatency",
+
+        "-pix_fmt", "yuv420p",
+
         "-b:v", "1000k",
+
         "-maxrate", "1500k",
+
+        "-bufsize", "2000k",
+
         "-g", str(fps * 2),
+
+        "-keyint_min", str(fps),
+
+        "-use_wallclock_as_timestamps", "1",
+
         "-flush_packets", "1",
+
         "-f", "rtsp",
+
         "-rtsp_transport", "tcp",
+
         rtsp_url
     ]
-    
+
     try:
-        # Create pipe between libcamera and FFmpeg
-        proc1 = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        proc2 = subprocess.Popen(ffmpeg_cmd, stdin=proc1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        proc1.stdout.close()  # Allow proc1 to receive SIGTERM
-        
-        FFMPEG_PROCESSES[camera_id] = proc2
-        print(f"[{camera_id}] Libcamera + FFmpeg started")
-        return True
+
+        process = subprocess.Popen(
+
+            cmd,
+
+            stdout=subprocess.PIPE,
+
+            stderr=subprocess.STDOUT,
+
+            preexec_fn=os.setsid
+
+        )
+
+        FFMPEG_PROCESSES[camera_id] = process
+
+        print(f"[{camera_id}] started (PID {process.pid})")
+
     except Exception as e:
-        print(f"[{camera_id}] Failed to start: {e}")
-        return False
+
+        print(f"[{camera_id}] failed: {e}")
 
 
 def stop_stream(camera_id):
-    """Stop streaming for a camera"""
+
     if camera_id not in FFMPEG_PROCESSES:
-        print(f"[{camera_id}] No stream to stop")
         return
-    
+
     proc = FFMPEG_PROCESSES[camera_id]
-    
+
     try:
-        # Kill process group
+
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        print(f"[{camera_id}] Stopped")
-    except Exception as e:
-        print(f"[{camera_id}] Error stopping: {e}")
-    
+
+        print(f"[{camera_id}] stopped")
+
+    except:
+        pass
+
     del FFMPEG_PROCESSES[camera_id]
 
 
 def stop_all():
-    """Stop all streams"""
-    for camera_id in list(FFMPEG_PROCESSES.keys()):
-        stop_stream(camera_id)
+
+    for cam in list(FFMPEG_PROCESSES.keys()):
+        stop_stream(cam)
 
 
-def status_check():
-    """Show streaming status"""
-    print("\n" + "=" * 50)
-    print("Streaming Status")
-    print("=" * 50)
-    print(f"MediaMTX Server: {MEDIAMTX_HOST}:{MEDIAMTX_PORT}")
-    print()
-    
-    for camera_id, config in CAMERAS.items():
-        device = config["device"]
-        resolution = config.get("resolution", "640x480")
-        fps = config.get("fps", 25)
-        
-        # Check if streaming
-        if camera_id in FFMPEG_PROCESSES:
-            proc = FFMPEG_PROCESSES[camera_id]
+def status():
+
+    print("\n=========== STATUS ===========\n")
+
+    print(f"MediaMTX: {MEDIAMTX_HOST}:{MEDIAMTX_PORT}\n")
+
+    for cam, cfg in CAMERAS.items():
+
+        device = cfg["device"]
+
+        if cam in FFMPEG_PROCESSES:
+
+            proc = FFMPEG_PROCESSES[cam]
+
             if proc.poll() is None:
-                status = "✅ Streaming"
+                s = "STREAMING"
             else:
-                status = "❌ Crashed"
+                s = "CRASHED"
+
         else:
-            status = "⏹️ Stopped"
-        
-        # Check camera
-        cam_available = check_camera_available(device)
-        
-        print(f"{camera_id}:")
-        print(f"  Status: {status}")
-        print(f"  Device: {device} ({'✅' if cam_available else '❌'})")
-        print(f"  Resolution: {resolution}")
-        print(f"  FPS: {fps}")
-        print(f"  RTSP: rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}")
+
+            s = "STOPPED"
+
+        print(cam)
+
+        print(" status:", s)
+
+        print(" device:", device, "OK" if check_camera(device) else "MISSING")
+
+        print(" url:", get_rtsp_url(cam))
+
         print()
-    
-    print("=" * 50)
+
+    print("==============================\n")
+
+
+def monitor():
+
+    while True:
+
+        time.sleep(5)
+
+        for cam, proc in list(FFMPEG_PROCESSES.items()):
+
+            if proc.poll() is not None:
+
+                print(f"[{cam}] stream crashed → restarting")
+
+                config = CAMERAS[cam]
+
+                start_stream(cam, config)
 
 
 def main():
+
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Pi Camera RTSP Streamer")
-    parser.add_argument("action", choices=["start", "stop", "status", "restart"],
-                        help="Action to perform")
-    parser.add_argument("camera_id", nargs="?", help="Specific camera ID")
-    
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("action", choices=["start", "stop", "status", "restart"])
+
+    parser.add_argument("camera", nargs="?")
+
     args = parser.parse_args()
-    
+
     if args.action == "start":
-        if args.camera_id:
-            # Start specific camera
-            if args.camera_id in CAMERAS:
-                start_stream_ffmpeg(args.camera_id, CAMERAS[args.camera_id])
-            else:
-                print(f"Camera {args.camera_id} not found")
-                sys.exit(1)
+
+        if args.camera:
+
+            start_stream(args.camera, CAMERAS[args.camera])
+
         else:
-            # Start all cameras
-            print("Starting all cameras...")
-            for camera_id, config in CAMERAS.items():
-                if config.get("device"):
-                    # Has device - use V4L2/FFmpeg
-                    start_stream_ffmpeg(camera_id, config)
-                else:
-                    # No device - use libcamera
-                    start_stream_libcamera(camera_id, config)
+
+            for cam, cfg in CAMERAS.items():
+
+                start_stream(cam, cfg)
+
                 time.sleep(1)
-    
+
     elif args.action == "stop":
-        if args.camera_id:
-            stop_stream(args.camera_id)
+
+        if args.camera:
+            stop_stream(args.camera)
         else:
             stop_all()
-    
+
     elif args.action == "restart":
-        if args.camera_id:
-            stop_stream(args.camera_id)
+
+        stop_all()
+
+        time.sleep(2)
+
+        for cam, cfg in CAMERAS.items():
+
+            start_stream(cam, cfg)
+
             time.sleep(1)
-            start_stream_ffmpeg(args.camera_id, CAMERAS[args.camera_id])
-        else:
-            stop_all()
-            time.sleep(1)
-            for camera_id, config in CAMERAS.items():
-                start_stream_ffmpeg(camera_id, config)
-                time.sleep(1)
-    
+
     elif args.action == "status":
-        status_check()
-    
-    # Keepalive loop - monitor FFmpeg processes
-    print("Monitoring streams...")
-    while True:
-        try:
-            time.sleep(5)
-            # Check if any FFmpeg process died
-            for camera_id, process in list(FFMPEG_PROCESSES.items()):
-                if process.poll() is not None:
-                    # Get FFmpeg output before restarting
-                    try:
-                        # Read all available output
-                        output = b""
-                        while True:
-                            try:
-                                chunk = process.stdout.read1(1024)
-                                if not chunk:
-                                    break
-                                output += chunk
-                                if len(output) > 10000:  # Limit output
-                                    break
-                            except:
-                                break
-                        if output:
-                            output_str = output.decode('utf-8', errors='ignore')
-                            print(f"[{camera_id}] FFmpeg output: {output_str[-2000:]}")
-                    except:
-                        pass
-                    print(f"[{camera_id}] FFmpeg process died, restarting...")
-                    # Restart this camera - use appropriate method
-                    config = CAMERAS[camera_id]
-                    if config.get("device"):
-                        start_stream_ffmpeg(camera_id, config)
-                    else:
-                        start_stream_libcamera(camera_id, config)
-        except KeyboardInterrupt:
-            print("\nInterrupted, stopping streams...")
-            stop_all()
-            break
+
+        status()
+
+        return
+
+    monitor()
 
 
 if __name__ == "__main__":
+
     try:
         main()
+
     except KeyboardInterrupt:
-        print("\nInterrupted, stopping streams...")
+
         stop_all()
