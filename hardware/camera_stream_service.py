@@ -22,17 +22,17 @@ MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")
 MEDIAMTX_PORT = int(os.environ.get("MEDIAMTX_PORT", "8554"))
 STREAM_KEY = os.environ.get("STREAM_KEY", "secret")
 
-# Correct mapping: host internal camera is /dev/video3
+# Correct device mapping and format fix for internal camera
 CAMERAS = {
     "pi_cam_external": {"device": "/dev/video0", "resolution": "640x480", "fps": 25},
-    "pi_cam_internal": {"device": "/dev/video3", "resolution": "640x480", "fps": 25},
+    "pi_cam_internal": {"device": "/dev/video3", "resolution": "640x480", "fps": 25, "format": "yuyv422"},
 }
 
 FFMPEG_PROCESSES = {}
 
 
 def get_rtsp_url(camera_id):
-    return f"rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}?key={STREAM_KEY}" if STREAM_KEY else f"rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}"
+    return f"rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}?key={STREAM_KEY}"
 
 
 def check_camera(device):
@@ -72,7 +72,7 @@ def start_stream(camera_id, cfg):
         print(f"[{camera_id}] camera not found: {device}")
         return
 
-    fmt = detect_camera_format(device)
+    fmt = cfg.get("format") or detect_camera_format(device)
     rtsp_url = get_rtsp_url(camera_id)
 
     cmd = [
@@ -105,9 +105,9 @@ def start_stream(camera_id, cfg):
         rtsp_url,
     ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid, text=True)
     FFMPEG_PROCESSES[camera_id] = proc
-    print(f"[{camera_id}] streaming at {rtsp_url} (PID {proc.pid}, format={fmt or 'default'})")
+    print(f"[{camera_id}] streaming at {rtsp_url} (PID {proc.pid}, format={fmt})")
 
 
 def stop_stream(camera_id):
