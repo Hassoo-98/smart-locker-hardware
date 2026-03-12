@@ -59,7 +59,7 @@ CAMERAS = {
 
 # FFmpeg/Streaming settings
 STREAM_KEY = os.environ.get("STREAM_KEY", "secret")  # Optional stream key
-HW_ACCEL = True       # Use hardware acceleration
+HW_ACCEL = False      # Use software encoding (libx264) - hardware encoder not available in container
 AUDIO = False         # No audio for now
 
 # Process management
@@ -129,12 +129,7 @@ def start_stream_ffmpeg(camera_id, config):
     # Add hardware acceleration if available
     if HW_ACCEL:
         cmd.extend([
-            "-c:v", "h264_v4l2m2m",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-        ])
-    else:
-        cmd.extend([
+            # Use software encoding (libx264) since h264_v4l2m2m may not be available in container
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-tune", "zerolatency",
