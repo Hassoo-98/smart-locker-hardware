@@ -3,6 +3,7 @@
 Raspberry Pi 4 RTSP Streamer to MediaMTX
 
 Streams external and internal USB cameras reliably via RTSP/H264.
+Auto-detects cameras based on USB hardware name for stability.
 
 Requirements:
     sudo apt-get update
@@ -13,42 +14,62 @@ Environment Variables:
     MEDIAMTX_PORT - MediaMTX RTSP port (default: 8554)
     STREAM_KEY   - Stream key for authentication
 """
+
 import os
 import subprocess
 import time
 import signal
-import glob
+import re
 
 MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")
 MEDIAMTX_PORT = int(os.environ.get("MEDIAMTX_PORT", "8554"))
 STREAM_KEY = os.environ.get("STREAM_KEY", "secret")
 
-# Define cameras by USB hardware ID (so it's stable even if /dev/videoX changes)
-CAMERA_HARDWARE_IDS = {
-    "pi_cam_external": "usb-0000:01:00.0-1.2",  # LRCP H-720P
-    "pi_cam_internal": "usb-0000:01:00.0-1.4",  # Integrated Camera
+# Camera names to auto-detect
+CAMERA_NAMES = {
+    "pi_cam_external": "LRCP H-720P",
+    "pi_cam_internal": "Integrated Camera",
 }
 
 # Auto-detect /dev/videoX for each camera
-def find_camera_device_by_id(usb_id):
-    for video_path in glob.glob("/dev/video*"):
-        sys_path = os.path.realpath(f"/sys/class/video4linux/{os.path.basename(video_path)}/device")
-        if usb_id in sys_path:
-            return video_path
+def find_camera_device_by_name(camera_name):
+    """
+    Parses `v4l2-ctl --list-devices` to find the first /dev/videoX for the given camera_name.
+    """
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "--list-devices"],
+            capture_output=True, text=True, check=True
+        ).stdout
+        blocks = result.strip().split("\n\n")
+        for block in blocks:
+            lines = block.strip().splitlines()
+            if not lines:
+                continue
+            name = lines[0].strip()
+            if camera_name.lower() in name.lower():
+                for line in lines[1:]:
+                    m = re.search(r"/dev/video\d+", line)
+                    if m:
+                        return m.group(0)
+    except Exception as e:
+        print(f"[ERROR] find_camera_device_by_name failed: {e}")
     return None
 
+# Initialize CAMERAS dictionary with detected devices
 CAMERAS = {}
-for cam_name, hw_id in CAMERA_HARDWARE_IDS.items():
-    dev = find_camera_device_by_id(hw_id)
+for cam_name, cam_str in CAMERA_NAMES.items():
+    dev = find_camera_device_by_name(cam_str)
     if dev:
         CAMERAS[cam_name] = {
             "device": dev,
             "resolution": "640x480",
             "fps": 25,
-            "format": "mjpeg" if cam_name == "pi_cam_internal" else None
+            "format": "mjpeg" if cam_name == "pi_cam_internal" else "yuyv422"
         }
+        print(f"[INFO] {cam_name} detected at {dev}")
     else:
-        print(f"[WARNING] Camera {cam_name} with USB ID {hw_id} not found!")
+        print(f"[WARNING] Camera {cam_name} with name '{cam_str}' not found!")
 
 FFMPEG_PROCESSES = {}
 
@@ -58,20 +79,6 @@ def get_rtsp_url(camera_id):
 def check_camera(device):
     return os.path.exists(device)
 
-def detect_camera_format(device):
-    try:
-        result = subprocess.run(
-            ["v4l2-ctl", "--device", device, "--get-fmt-video"],
-            capture_output=True, text=True, check=True
-        ).stdout.lower()
-        if "mjpeg" in result:
-            return "mjpeg"
-        elif "yuyv" in result:
-            return "yuyv422"
-    except Exception:
-        pass
-    return None
-
 def start_stream(camera_id, cfg):
     if camera_id in FFMPEG_PROCESSES and FFMPEG_PROCESSES[camera_id].poll() is None:
         print(f"[{camera_id}] already streaming")
@@ -80,7 +87,7 @@ def start_stream(camera_id, cfg):
     device = cfg["device"]
     resolution = cfg["resolution"]
     fps = cfg["fps"]
-    fmt = cfg.get("format") or detect_camera_format(device)
+    fmt = cfg.get("format")
 
     if not check_camera(device):
         print(f"[{camera_id}] camera not found: {device}")
@@ -190,3 +197,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         stop_all()
+        print("\nExiting...")
+        exit(0)
