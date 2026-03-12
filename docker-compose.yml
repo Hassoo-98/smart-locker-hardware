@@ -1,16 +1,17 @@
+
 services:
   camera-service:
     build: .
     container_name: camera_service
     restart: unless-stopped
-    privileged: true           # Grant full device access
+    privileged: true           # Full device access
     mem_limit: 512m
     mem_reservation: 256m
     cpus: 0.5
 
     devices:
-      - /dev/video0:/dev/video0   # External
-      - /dev/video3:/dev/video3   # Internal mapped correctly
+      - /dev/video0:/dev/video0   # External camera
+      - /dev/video3:/dev/video3   # Internal camera (correct mapping)
       - /dev/gpiochip0:/dev/gpiochip0
       - /dev/gpiochip4:/dev/gpiochip4
       - /dev/i2c-20:/dev/i2c-1
