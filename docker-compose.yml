@@ -10,8 +10,8 @@ services:
     cpus: 0.5
 
     devices:
-      - /dev/video0:/dev/video0   # External camera
-      - /dev/video3:/dev/video3   # Internal camera (correct mapping)
+      - /dev/video0:/dev/video0   # External USB camera
+      - /dev/video2:/dev/video2   # Internal USB camera (MJPG)
       - /dev/gpiochip0:/dev/gpiochip0
       - /dev/gpiochip4:/dev/gpiochip4
       - /dev/i2c-20:/dev/i2c-1

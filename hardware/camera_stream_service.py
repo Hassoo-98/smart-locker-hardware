@@ -22,57 +22,34 @@ MEDIAMTX_HOST = os.environ.get("MEDIAMTX_HOST", "69.62.125.223")
 MEDIAMTX_PORT = int(os.environ.get("MEDIAMTX_PORT", "8554"))
 STREAM_KEY = os.environ.get("STREAM_KEY", "secret")
 
-# Correct device mapping and format fix for internal camera
+# Camera configuration (internal uses MJPG for stability)
 CAMERAS = {
-    "pi_cam_external": {"device": "/dev/video0", "resolution": "640x480", "fps": 25},
-    "pi_cam_internal": {"device": "/dev/video3", "resolution": "640x480", "fps": 25, "format": "yuyv422"},
+    "pi_cam_external": {"device": "/dev/video0", "resolution": "640x480", "fps": 25, "format": "yuyv422"},
+    "pi_cam_internal": {"device": "/dev/video2", "resolution": "640x480", "fps": 25, "format": "mjpeg"},
 }
 
 FFMPEG_PROCESSES = {}
 
-
 def get_rtsp_url(camera_id):
     return f"rtsp://{MEDIAMTX_HOST}:{MEDIAMTX_PORT}/{camera_id}?key={STREAM_KEY}"
-
 
 def check_camera(device):
     return os.path.exists(device)
 
-
-def detect_camera_format(device):
-    """
-    Returns 'mjpeg' or 'yuyv422' for FFmpeg input
-    """
-    try:
-        result = subprocess.run(
-            ["v4l2-ctl", "--device", device, "--get-fmt-video"],
-            capture_output=True, text=True, check=True
-        ).stdout.lower()
-        if "mjpeg" in result:
-            return "mjpeg"
-        elif "yuyv" in result:
-            return "yuyv422"
-    except Exception:
-        pass
-    return None
-
-
 def start_stream(camera_id, cfg):
-    if camera_id in FFMPEG_PROCESSES:
-        proc = FFMPEG_PROCESSES[camera_id]
-        if proc.poll() is None:
-            print(f"[{camera_id}] already streaming")
-            return
+    if camera_id in FFMPEG_PROCESSES and FFMPEG_PROCESSES[camera_id].poll() is None:
+        print(f"[{camera_id}] already streaming")
+        return
 
     device = cfg["device"]
     resolution = cfg["resolution"]
     fps = cfg["fps"]
+    fmt = cfg.get("format")
 
     if not check_camera(device):
         print(f"[{camera_id}] camera not found: {device}")
         return
 
-    fmt = cfg.get("format") or detect_camera_format(device)
     rtsp_url = get_rtsp_url(camera_id)
 
     cmd = [
@@ -82,10 +59,7 @@ def start_stream(camera_id, cfg):
         "-flags", "low_delay",
         "-f", "v4l2",
         "-thread_queue_size", "4096",
-    ]
-    if fmt:
-        cmd += ["-input_format", fmt]
-    cmd += [
+        "-input_format", fmt,
         "-framerate", str(fps),
         "-video_size", resolution,
         "-i", device,
@@ -109,7 +83,6 @@ def start_stream(camera_id, cfg):
     FFMPEG_PROCESSES[camera_id] = proc
     print(f"[{camera_id}] streaming at {rtsp_url} (PID {proc.pid}, format={fmt})")
 
-
 def stop_stream(camera_id):
     proc = FFMPEG_PROCESSES.get(camera_id)
     if proc:
@@ -120,11 +93,9 @@ def stop_stream(camera_id):
             pass
         FFMPEG_PROCESSES.pop(camera_id, None)
 
-
 def stop_all():
     for cam in list(FFMPEG_PROCESSES.keys()):
         stop_stream(cam)
-
 
 def status():
     print("\n=========== CAMERA STATUS ===========\n")
@@ -138,7 +109,6 @@ def status():
         print(f"  URL: {get_rtsp_url(cam)}\n")
     print("====================================\n")
 
-
 def monitor():
     while True:
         time.sleep(5)
@@ -146,7 +116,6 @@ def monitor():
             if proc.poll() is not None:
                 print(f"[{cam}] crashed → restarting")
                 start_stream(cam, CAMERAS[cam])
-
 
 def main():
     import argparse
@@ -178,7 +147,6 @@ def main():
         return
 
     monitor()
-
 
 if __name__ == "__main__":
     try:
