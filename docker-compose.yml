@@ -1,10 +1,11 @@
+version: "3.9"
 
 services:
   camera-service:
     build: .
     container_name: camera_service
     restart: unless-stopped
-    privileged: true           # Full device access
+    privileged: true
     mem_limit: 512m
     mem_reservation: 256m
     cpus: 0.5
@@ -12,7 +13,6 @@ services:
     devices:
       - /dev/video0:/dev/video0
       - /dev/video2:/dev/video2
-      - /dev/video3:/dev/video3   # optional, will be autodetected
       - /dev/gpiochip0:/dev/gpiochip0
       - /dev/gpiochip4:/dev/gpiochip4
       - /dev/i2c-20:/dev/i2c-1
